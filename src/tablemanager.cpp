@@ -1083,7 +1083,7 @@ void TableManager::Delete(expr_node_t* where)
 void TableManager::Cache(std::set<int>& rids)
 {
     if (rids.empty()) {
-        //遍历所有record并填充rids
+        //iterate over all record and fill in rids
         Record* record;
         if (current_recordManager->InitializeIteration()) {
             do {
@@ -1094,7 +1094,7 @@ void TableManager::Cache(std::set<int>& rids)
             } while (current_recordManager->NextRecord());
         }
     } else {
-        //遍历rids中的record
+        //iterate over all record in rids
         Record* record;
         for (int rid : rids) {
             record = current_recordManager->GetRecord(rid);

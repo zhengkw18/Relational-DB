@@ -606,6 +606,7 @@ void DatabaseManager::Select(const select_info_t* select_info)
             for (int b = a + 1; b < table_num; b++) {
                 int index = table_num * a - a * (a + 1) / 2 + b - a - 1;
                 if (two_table_expr[index].size() > 0) {
+                    set<int> newset_a, newset_b;
                     std::vector<expr_node_t*> two_table_binary;
                     std::vector<expr_node_t*> two_table_remain;
                     for (expr_node_t* expr : two_table_expr[index]) {
@@ -627,6 +628,10 @@ void DatabaseManager::Select(const select_info_t* select_info)
                                 expr_a = expr->left;
                                 expr_b = expr->right;
                             }
+                            IndexManager* im = current_tables[table_ids[a]]->GetIndexManager(current_tables[table_ids[a]]->GetColumnID(expr_a->column_ref->column));
+                            if (im != nullptr) {
+                                continue;
+                            }
                             for (int rid_a : one_table_rids[a]) {
                                 expressions_a.push_back(cache[std::make_tuple(expr_a->column_ref->table, expr_a->column_ref->column, rid_a)]);
                             }
@@ -646,19 +651,30 @@ void DatabaseManager::Select(const select_info_t* select_info)
                                     expr_a = expr->left;
                                     expr_b = expr->right;
                                 }
-                                std::vector<Expression> expressions_a = expr_to_expressions_a[expr];
-                                Expression expression_b = cache[std::make_tuple(expr_b->column_ref->table, expr_b->column_ref->column, rid_b)];
-                                int pos = std::lower_bound(expressions_a.begin(), expressions_a.end(), expression_b) - expressions_a.begin();
-                                for (int i = pos; i < expressions_a.size(); i++) {
-                                    if (expressions_a[i] == expression_b) {
-                                        rid_as_temp.insert(expressions_a[i].rid);
-                                    } else {
-                                        break;
+                                IndexManager* im = current_tables[table_ids[a]]->GetIndexManager(current_tables[table_ids[a]]->GetColumnID(expr_a->column_ref->column));
+                                if (im != nullptr) {
+                                    Expression expression_b = cache[std::make_tuple(expr_b->column_ref->table, expr_b->column_ref->column, rid_b)];
+                                    BufType val = expression::expr_to_buftype(expression_b);
+                                    im->get_rid_eq(val, rid_as_temp);
+                                    std::set<int> result;
+                                    std::set_intersection(rid_as.begin(), rid_as.end(), rid_as_temp.begin(), rid_as_temp.end(), std::inserter(result, result.begin()));
+                                    rid_as = result;
+                                    delete[] val;
+                                } else {
+                                    std::vector<Expression> expressions_a = expr_to_expressions_a[expr];
+                                    Expression expression_b = cache[std::make_tuple(expr_b->column_ref->table, expr_b->column_ref->column, rid_b)];
+                                    int pos = std::lower_bound(expressions_a.begin(), expressions_a.end(), expression_b) - expressions_a.begin();
+                                    for (int i = pos; i < expressions_a.size(); i++) {
+                                        if (expressions_a[i] == expression_b) {
+                                            rid_as_temp.insert(expressions_a[i].rid);
+                                        } else {
+                                            break;
+                                        }
                                     }
+                                    std::set<int> result;
+                                    std::set_intersection(rid_as.begin(), rid_as.end(), rid_as_temp.begin(), rid_as_temp.end(), std::inserter(result, result.begin()));
+                                    rid_as = result;
                                 }
-                                std::set<int> result;
-                                std::set_intersection(rid_as.begin(), rid_as.end(), rid_as_temp.begin(), rid_as_temp.end(), std::inserter(result, result.begin()));
-                                rid_as = result;
                             }
                             for (int rid_a : rid_as) {
                                 expression::set_current_rid(tables[a], rid_a);
@@ -672,6 +688,8 @@ void DatabaseManager::Select(const select_info_t* select_info)
                                 }
                                 if (valid) {
                                     two_table_rids[index].insert(std::make_pair(rid_a, rid_b));
+                                    newset_a.insert(rid_a);
+                                    newset_b.insert(rid_b);
                                 }
                             }
                         }
@@ -686,6 +704,10 @@ void DatabaseManager::Select(const select_info_t* select_info)
                             } else {
                                 expr_a = expr->left;
                                 expr_b = expr->right;
+                            }
+                            IndexManager* im = current_tables[table_ids[b]]->GetIndexManager(current_tables[table_ids[b]]->GetColumnID(expr_b->column_ref->column));
+                            if (im != nullptr) {
+                                continue;
                             }
                             for (int rid_b : one_table_rids[b]) {
                                 expressions_b.push_back(cache[std::make_tuple(expr_b->column_ref->table, expr_b->column_ref->column, rid_b)]);
@@ -706,19 +728,30 @@ void DatabaseManager::Select(const select_info_t* select_info)
                                     expr_a = expr->left;
                                     expr_b = expr->right;
                                 }
-                                std::vector<Expression> expressions_b = expr_to_expressions_b[expr];
-                                Expression expression_a = cache[std::make_tuple(expr_a->column_ref->table, expr_a->column_ref->column, rid_a)];
-                                int pos = std::lower_bound(expressions_b.begin(), expressions_b.end(), expression_a) - expressions_b.begin();
-                                for (int i = pos; i < expressions_b.size(); i++) {
-                                    if (expressions_b[i] == expression_a) {
-                                        rid_bs_temp.insert(expressions_b[i].rid);
-                                    } else {
-                                        break;
+                                IndexManager* im = current_tables[table_ids[b]]->GetIndexManager(current_tables[table_ids[b]]->GetColumnID(expr_b->column_ref->column));
+                                if (im != nullptr) {
+                                    Expression expression_a = cache[std::make_tuple(expr_a->column_ref->table, expr_a->column_ref->column, rid_a)];
+                                    BufType val = expression::expr_to_buftype(expression_a);
+                                    im->get_rid_eq(val, rid_bs_temp);
+                                    std::set<int> result;
+                                    std::set_intersection(rid_bs.begin(), rid_bs.end(), rid_bs_temp.begin(), rid_bs_temp.end(), std::inserter(result, result.begin()));
+                                    rid_bs = result;
+                                    delete[] val;
+                                } else {
+                                    std::vector<Expression> expressions_b = expr_to_expressions_b[expr];
+                                    Expression expression_a = cache[std::make_tuple(expr_a->column_ref->table, expr_a->column_ref->column, rid_a)];
+                                    int pos = std::lower_bound(expressions_b.begin(), expressions_b.end(), expression_a) - expressions_b.begin();
+                                    for (int i = pos; i < expressions_b.size(); i++) {
+                                        if (expressions_b[i] == expression_a) {
+                                            rid_bs_temp.insert(expressions_b[i].rid);
+                                        } else {
+                                            break;
+                                        }
                                     }
+                                    std::set<int> result;
+                                    std::set_intersection(rid_bs.begin(), rid_bs.end(), rid_bs_temp.begin(), rid_bs_temp.end(), std::inserter(result, result.begin()));
+                                    rid_bs = result;
                                 }
-                                std::set<int> result;
-                                std::set_intersection(rid_bs.begin(), rid_bs.end(), rid_bs_temp.begin(), rid_bs_temp.end(), std::inserter(result, result.begin()));
-                                rid_bs = result;
                             }
                             for (int rid_b : rid_bs) {
                                 expression::set_current_rid(tables[a], rid_a);
@@ -732,10 +765,14 @@ void DatabaseManager::Select(const select_info_t* select_info)
                                 }
                                 if (valid) {
                                     two_table_rids[index].insert(std::make_pair(rid_a, rid_b));
+                                    newset_a.insert(rid_a);
+                                    newset_b.insert(rid_b);
                                 }
                             }
                         }
                     }
+                    one_table_rids[a] = newset_a;
+                    one_table_rids[b] = newset_b;
                 }
             }
         }
