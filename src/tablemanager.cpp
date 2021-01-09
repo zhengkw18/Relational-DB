@@ -738,13 +738,243 @@ TableHeader* TableManager::InitHeader(const char* table_name, const linked_list_
 }
 TableHeader* TableManager::AddCol(const TableHeader* current, const field_item_t* field)
 {
-    //TODO: should not have unique, if not null must have default
+    TableHeader newheader;
+    memcpy(&newheader, current, sizeof(TableHeader));
+    if (current->col_num == MAX_COL_NUM) {
+        fprintf(stderr, "[Error] Too many columns.\n");
+        return nullptr;
+    }
+    if (strlen(field->name) + 1 > MAX_NAME_LEN) {
+        fprintf(stderr, "[Error] Column name too long.\n");
+        return nullptr;
+    }
+    for (int i = 0; i < current->col_num; i++) {
+        if (strcmp(current->col_name[i], field->name) == 0) {
+            fprintf(stderr, "[Error] Column name duplicated.\n");
+            return nullptr;
+        }
+    }
+    if (current->records_num > 0) {
+        if (field->flags & FIELD_FLAG_UNIQUE) {
+            fprintf(stderr, "[Error] New column should not have unique constraint when table is not empty.\n");
+            return nullptr;
+        }
+        if ((field->flags & FIELD_FLAG_NOTNULL) && field->default_value == nullptr) {
+            fprintf(stderr, "[Error] New column should have default constraint when table is not empty and not null constraint is set.\n");
+            return nullptr;
+        }
+    }
+    int id = current->col_num;
+    strcpy(newheader.col_name[id], field->name);
+    switch (field->type) {
+    case FIELD_TYPE_INT:
+        newheader.col_type[id] = TYPE_INT;
+        newheader.col_length[id] = 4;
+        break;
+    case FIELD_TYPE_FLOAT:
+        newheader.col_type[id] = TYPE_FLOAT;
+        newheader.col_length[id] = 4;
+        break;
+    case FIELD_TYPE_DATE:
+        newheader.col_type[id] = TYPE_DATE;
+        newheader.col_length[id] = 4;
+        break;
+    case FIELD_TYPE_CHAR:
+        newheader.col_type[id] = TYPE_CHAR;
+        newheader.col_length[id] = field->width;
+        break;
+    case FIELD_TYPE_VARCHAR:
+        newheader.col_type[id] = TYPE_VARCHAR;
+        newheader.col_length[id] = field->width;
+        break;
+    default:
+        assert(false);
+        break;
+    }
+    if (field <= 0) {
+        fprintf(stderr, "[Error] Invalid field width.\n");
+        return nullptr;
+    }
+
+    if (field->flags & FIELD_FLAG_NOTNULL)
+        setBit(&newheader.bitmap_notnull, id, true);
+    if (field->flags & FIELD_FLAG_UNIQUE)
+        setBit(&newheader.bitmap_unique, id, true);
+    if (field->default_value != nullptr) {
+        Expression expr = expression::eval(field->default_value);
+        if (!expression::type_compatible(newheader.col_type[id], expr)) {
+            fprintf(stderr, "[Error] Default type incompatible.\n");
+            return nullptr;
+        }
+        std::string default_str = expression::to_poland(field->default_value);
+        if (strlen(default_str.c_str()) + 1 >= MAX_DEFAULT_LEN) {
+            fprintf(stderr, "[Error] Default too long.\n");
+            return nullptr;
+        }
+        strcpy(newheader.default_values[id], default_str.c_str());
+        setBit(&newheader.bitmap_default, id, 1);
+    }
+    newheader.records_num = 0;
+    newheader.col_num++;
+    newheader.bitmap_len = ceil(newheader.col_num, 32);
+    newheader.record_len = newheader.bitmap_len;
+    for (int i = 0; i < newheader.col_num; i++) {
+        if (newheader.col_type[i] == TYPE_VARCHAR)
+            newheader.col_aligned_len[i] = 1;
+        else if (newheader.col_type[i] == TYPE_CHAR)
+            newheader.col_aligned_len[i] = ceil(newheader.col_length[i] + 1, 4);
+        else
+            newheader.col_aligned_len[i] = ceil(newheader.col_length[i], 4);
+        newheader.record_len += newheader.col_aligned_len[i];
+    }
+    TableHeader* header_ptr = new TableHeader;
+    *header_ptr = newheader;
+    return header_ptr;
 }
 TableHeader* TableManager::DeleteCol(const TableHeader* current, const char* field_name)
 {
-    //TODO: if has primary or foreign, don't allow to delete col
-    //TODO: handle check
-    //TODO: handle offset of col idx
+    TableHeader newheader;
+    memset(&newheader, 0, sizeof(TableHeader));
+    if (current->referred_num > 0) {
+        fprintf(stderr, "[Error] The table is referred.\n");
+        return nullptr;
+    }
+    int id = -1;
+    for (int i = 0; i < current->col_num; i++) {
+        if (strcmp(current->col_name[i], field_name) == 0) {
+            id = i;
+            break;
+        }
+    }
+    if (id == -1) {
+        fprintf(stderr, "[Error] Column not found.\n");
+        return nullptr;
+    }
+    if (current->col_num == 1) {
+        fprintf(stderr, "[Error] Can not delete the only column.\n");
+        return nullptr;
+    }
+    strcpy(newheader.table_name, current->table_name);
+    for (int col = 0; col < current->col_num; col++) {
+        if (col == id)
+            continue;
+        int new_col = newheader.col_num;
+        strcpy(newheader.col_name[new_col], current->col_name[col]);
+        newheader.col_length[new_col] = current->col_length[col];
+        newheader.col_type[new_col] = current->col_type[col];
+        if (getBit(&current->bitmap_notnull, col)) {
+            setBit(&newheader.bitmap_notnull, new_col, true);
+        }
+        if (getBit(&current->bitmap_unique, col)) {
+            setBit(&newheader.bitmap_unique, new_col, true);
+        }
+        if (getBit(&current->bitmap_default, col)) {
+            setBit(&newheader.bitmap_default, new_col, true);
+            memcpy(newheader.default_values[new_col], current->default_values[col], MAX_DEFAULT_LEN);
+        }
+        newheader.col_num++;
+    }
+    newheader.records_num = 0;
+    newheader.bitmap_len = ceil(newheader.col_num, 32);
+    newheader.record_len = newheader.bitmap_len;
+    for (int i = 0; i < newheader.col_num; i++) {
+        if (newheader.col_type[i] == TYPE_VARCHAR)
+            newheader.col_aligned_len[i] = 1;
+        else if (newheader.col_type[i] == TYPE_CHAR)
+            newheader.col_aligned_len[i] = ceil(newheader.col_length[i] + 1, 4);
+        else
+            newheader.col_aligned_len[i] = ceil(newheader.col_length[i], 4);
+        newheader.record_len += newheader.col_aligned_len[i];
+    }
+    //add primary
+    bool flag = false;
+    for (int i = 0; i < current->primary_num; i++) {
+        if (current->primary_cols[i] == id) {
+            flag = true;
+            break;
+        }
+    }
+    if (flag) {
+        newheader.primary_num = 0;
+    } else {
+        newheader.primary_num = current->primary_num;
+        for (int i = 0; i < current->primary_num; i++) {
+            if (current->primary_cols[i] < id) {
+                newheader.primary_cols[i] = current->primary_cols[i];
+            } else {
+                newheader.primary_cols[i] = current->primary_cols[i] - 1;
+            }
+        }
+    }
+    //add index;
+    for (int i = 0; i < current->index_num; i++) {
+        bool flag = false;
+        for (int j = 0; j < current->index_col_num[i]; j++) {
+            if (current->index_cols[i][j] == id) {
+                flag = true;
+                break;
+            }
+        }
+        if (flag) {
+            continue;
+        } else {
+            newheader.index_col_num[newheader.index_num] = current->index_col_num[i];
+            strcpy(newheader.index_name[newheader.index_num], current->index_name[i]);
+            for (int j = 0; j < current->index_col_num[i]; j++) {
+                if (current->index_cols[i][j] < id) {
+                    newheader.index_cols[newheader.index_num][j] = current->index_cols[i][j];
+                } else {
+                    newheader.index_cols[newheader.index_num][j] = current->index_cols[i][j] - 1;
+                }
+            }
+            newheader.index_num++;
+        }
+    }
+    //add check
+    for (int i = 0; i < current->check_constaint_num; i++) {
+        std::istringstream is(std::string(current->check_constaints[i]));
+        expr_node_t* check = expression::from_poland(is);
+        std::vector<column_ref_t*> col_refs;
+        expression::extract_col_refs(check, col_refs);
+        bool flag = true;
+        for (column_ref_t* col_ref : col_refs) {
+            if (strcmp(col_ref->column, field_name) == 0) {
+                flag = false;
+                break;
+            }
+        }
+        if (flag) {
+            strcpy(newheader.check_constaints[newheader.check_constaint_num], current->check_constaints[i]);
+            newheader.check_constaint_num++;
+        }
+        free_exprnode(check);
+    }
+    //add foreign
+    for (int i = 0; i < current->foreign_num; i++) {
+        bool flag = false;
+        for (int j = 0; j < current->foreign_key_col_num[i]; j++) {
+            if (current->foreign_key_column[i][j] == id) {
+                flag = true;
+                break;
+            }
+        }
+        if (flag) {
+            DatabaseManager::get_instance()->get_table_manager(current->foreign_key_ref_table[i])->DeRefer();
+            continue;
+        } else {
+            int new_foreign = newheader.foreign_num;
+            newheader.foreign_key_col_num[new_foreign] = current->foreign_key_col_num[i];
+            strcpy(newheader.foreign_key_name[new_foreign], current->foreign_key_name[i]);
+            strcpy(newheader.foreign_key_ref_table[new_foreign], current->foreign_key_ref_table[i]);
+            for (int j = 0; j < current->foreign_key_col_num[i]; j++) {
+                newheader.foreign_key_column[new_foreign][j] = current->foreign_key_column[i][j];
+            }
+            newheader.foreign_num++;
+        }
+    }
+    TableHeader* header_ptr = new TableHeader;
+    *header_ptr = newheader;
+    return header_ptr;
 }
 IndexManager* TableManager::GetIndexManager(int col)
 {
@@ -799,6 +1029,122 @@ void TableManager::Insert(const linked_list_t* columns, const linked_list_t* val
     if (cols.size() != vals.size()) {
         fprintf(stderr, "[Error] Column num and value num mismatch.\n");
         return;
+    }
+    std::map<int, expr_node_t*> col_to_vals;
+    for (int i = 0; i < cols.size(); i++)
+        col_to_vals[cols[i]] = vals[i];
+    Record record;
+    record.iscopy = 1;
+    record.num = current_tableHeader.col_num;
+    record.type = new int[record.num];
+    memcpy(record.type, current_tableHeader.col_type, record.num * sizeof(int));
+    record.datas = new BufType[current_tableHeader.col_num];
+    for (int i = 0; i < current_tableHeader.col_num; i++) {
+        record.datas[i] = nullptr;
+    }
+    std::vector<Expression> exprs;
+    for (int i = 0; i < current_tableHeader.col_num; i++) {
+        if (col_to_vals.count(i) > 0) {
+            Expression expr = expression::eval(col_to_vals[i]);
+            if (!expression::type_compatible(current_tableHeader.col_type[i], expr)) {
+                fprintf(stderr, "[Error] Type incompatible.\n");
+                return;
+            }
+            record.datas[i] = expression::expr_to_buftype(expr);
+            exprs.push_back(expr);
+        } else if (getBit(&current_tableHeader.bitmap_default, i)) {
+            record.datas[i] = expression::expr_to_buftype(defaults[i]);
+            exprs.push_back(defaults[i]);
+        } else {
+            record.datas[i] = nullptr;
+            Expression null_expr;
+            null_expr.type = TERM_NULL;
+            exprs.push_back(null_expr);
+        }
+        if (current_tableHeader.col_type[i] == TYPE_CHAR || current_tableHeader.col_type[i] == TYPE_VARCHAR) {
+            if (record.datas[i] != nullptr && strlen((char*)record.datas[i]) > current_tableHeader.col_length[i]) {
+                fprintf(stderr, "[Error] String too long.\n");
+                return;
+            }
+        }
+    }
+    //check primary
+    if (current_tableHeader.primary_num > 0) {
+        if (!current_primaryManager->CheckNotNull(&record)) {
+            fprintf(stderr, "[Error] Primary key cannot be null.\n");
+            return;
+        }
+        if (current_primaryManager->Exists(&record, -1)) {
+            fprintf(stderr, "[Error] Primary key duplicated.\n");
+            return;
+        }
+    }
+    //check not null
+    for (int i = 0; i < current_tableHeader.col_num; i++) {
+        if (getBit(&current_tableHeader.bitmap_notnull, i)) {
+            if (record.datas[i] == nullptr) {
+                fprintf(stderr, "[Error] Not null constraint violation.\n");
+                return;
+            }
+        }
+    }
+    //check unique
+    for (int i = 0; i < current_tableHeader.col_num; i++) {
+        if (getBit(&current_tableHeader.bitmap_unique, i)) {
+            if (current_uniqueManagers[i]->Exists(&record, -1)) {
+                fprintf(stderr, "[Error] Unique constraint violation.\n");
+                return;
+            }
+        }
+    }
+    //check foreign
+    for (int i = 0; i < current_tableHeader.foreign_num; i++) {
+        TableManager* table_ref = DatabaseManager::get_instance()->get_table_manager(current_tableHeader.foreign_key_ref_table[i]);
+        Record* part = current_recordManager->GetParser()->toRecordPart(&record, current_tableHeader.foreign_key_column[i], current_tableHeader.foreign_key_col_num[i]);
+        if (!table_ref->GetPrimaryManager()->ExistsPart(part, -1)) {
+            fprintf(stderr, "[Error] Foreign constraint violation.\n");
+            delete part;
+            return;
+        }
+        delete part;
+    }
+    //check check
+    for (int i = 0; i < current_tableHeader.col_num; i++) {
+        expression::cache_expr(std::string(current_tableHeader.table_name), std::string(current_tableHeader.col_name[i]), 0, exprs[i]);
+    }
+    expression::set_current_rid(std::string(current_tableHeader.table_name), 0);
+    for (int i = 0; i < current_tableHeader.check_constaint_num; i++) {
+        if (!expression::expr_to_bool(expression::eval(checks[i]))) {
+            fprintf(stderr, "[Error] Check constraint violation.\n");
+            expression::clear_cache(false);
+            return;
+        }
+    }
+    expression::clear_cache(false);
+    int rid;
+    current_recordManager->InsertRecord(rid, &record);
+    record.rid = rid;
+    current_tableHeader.records_num++;
+    if (current_tableHeader.primary_num > 0) {
+        current_primaryManager->Insert(&record);
+    }
+    for (int i = 0; i < current_tableHeader.col_num; i++) {
+        if (getBit(&current_tableHeader.bitmap_unique, i)) {
+            current_uniqueManagers[i]->Insert(&record);
+        }
+    }
+    for (int i = 0; i < current_tableHeader.index_num; i++) {
+        current_indexManagers[i]->Insert(&record);
+    }
+}
+void TableManager::Insert(const std::vector<expr_node_t*>& values)
+{
+    expression::set_current_table(std::string(current_tableHeader.table_name));
+    std::vector<int> cols;
+    std::vector<expr_node_t*> vals = values;
+    std::set<std::string> names;
+    for (int i = 0; i < vals.size(); i++) {
+        cols.push_back(i);
     }
     std::map<int, expr_node_t*> col_to_vals;
     for (int i = 0; i < cols.size(); i++)
@@ -1146,4 +1492,8 @@ void TableManager::DropAllForeignKey()
 IndexManager* TableManager::GetPrimaryManager()
 {
     return current_primaryManager;
+}
+RecordManager* TableManager::GetRecordManager()
+{
+    return current_recordManager;
 }

@@ -1146,7 +1146,33 @@ void DatabaseManager::AlterTable_AddCol(const char* table_name, const field_item
     TableHeader* newheader = TableManager::AddCol(current_tables[table_id]->get_header(), field);
     if (newheader == nullptr)
         return;
-    //TODO
+    std::string name_temp = table_name;
+    name_temp = "_" + name_temp;
+    AlterTable_Rename(table_name, name_temp.c_str());
+    TableManager* old_tm = current_tables[table_id];
+    strcpy(current_databaseheader.tables[table_id], table_name);
+    TableManager::CreateTable(newheader);
+    delete newheader;
+    TableManager* new_tm = new TableManager(table_name);
+    current_tables[table_id] = new_tm;
+    RecordManager* old_rm = old_tm->GetRecordManager();
+    Record* record;
+    if (old_rm->InitializeIteration()) {
+        do {
+            record = old_rm->CurrentRecord();
+            std::vector<expr_node_t*> vals;
+            for (int i = 0; i < record->num; i++) {
+                vals.push_back(expression::column_to_expr_node(record->datas[i], record->type[i]));
+            }
+            new_tm->Insert(vals);
+            for (int i = 0; i < record->num; i++) {
+                free_exprnode(vals[i]);
+            }
+            delete record;
+        } while (old_rm->NextRecord());
+    }
+    delete old_tm;
+    TableManager::DropTable(name_temp.c_str());
 }
 void DatabaseManager::AlterTable_DropCol(const char* table_name, const char* field_name)
 {
@@ -1161,7 +1187,36 @@ void DatabaseManager::AlterTable_DropCol(const char* table_name, const char* fie
     TableHeader* newheader = TableManager::DeleteCol(current_table->get_header(), field_name);
     if (newheader == nullptr)
         return;
-    //TODO
+    int col_id = current_table->GetColumnID(field_name);
+    std::string name_temp = table_name;
+    name_temp = "_" + name_temp;
+    AlterTable_Rename(table_name, name_temp.c_str());
+    TableManager* old_tm = current_tables[table_id];
+    strcpy(current_databaseheader.tables[table_id], table_name);
+    TableManager::CreateTable(newheader);
+    delete newheader;
+    TableManager* new_tm = new TableManager(table_name);
+    current_tables[table_id] = new_tm;
+    RecordManager* old_rm = old_tm->GetRecordManager();
+    Record* record;
+    if (old_rm->InitializeIteration()) {
+        do {
+            record = old_rm->CurrentRecord();
+            std::vector<expr_node_t*> vals;
+            for (int i = 0; i < record->num; i++) {
+                if (i == col_id)
+                    continue;
+                vals.push_back(expression::column_to_expr_node(record->datas[i], record->type[i]));
+            }
+            new_tm->Insert(vals);
+            for (int i = 0; i < record->num - 1; i++) {
+                free_exprnode(vals[i]);
+            }
+            delete record;
+        } while (old_rm->NextRecord());
+    }
+    delete old_tm;
+    TableManager::DropTable(name_temp.c_str());
 }
 void DatabaseManager::AlterTable_AddForeign(const char* table_name, const char* name, const linked_list_t* cols, const char* name_ref, const linked_list_t* cols_ref)
 {

@@ -76,6 +76,48 @@ inline Expression column_to_expr(BufType data, int type, int rid)
     return expr;
 }
 
+inline expr_node_t* column_to_expr_node(BufType data, int type)
+{
+    expr_node_t* expr = (expr_node_t*)calloc(1, sizeof(expr_node_t));
+    expr->op = OPERATOR_NONE;
+    if (data == nullptr) {
+        expr->term_type = TERM_NULL;
+        return expr;
+    }
+    switch (type) {
+    case TYPE_INT:
+        expr->val_i = *(int*)data;
+        expr->term_type = TERM_INT;
+        break;
+    case TYPE_FLOAT:
+        expr->val_f = *(float*)data;
+        expr->term_type = TERM_FLOAT;
+        break;
+    case TYPE_DATE: {
+        char date_buf[32];
+        time_t time = *(int*)data;
+        auto tm = std::localtime(&time);
+        std::strftime(date_buf, 32, DATE_FORMAT, tm);
+        expr->val_s = new char[strlen(date_buf) + 1];
+        expr->term_type = TERM_DATE;
+        break;
+    }
+    case TYPE_CHAR:
+        expr->val_s = new char[strlen((char*)data) + 1];
+        strcpy(expr->val_s, (char*)data);
+        expr->term_type = TERM_STRING;
+        break;
+    case TYPE_VARCHAR:
+        expr->val_s = new char[strlen((char*)data) + 1];
+        strcpy(expr->val_s, (char*)data);
+        expr->term_type = TERM_STRING;
+        break;
+    default:
+        assert(false);
+    }
+    return expr;
+}
+
 inline bool expr_to_bool(const Expression& expr)
 {
     switch (expr.type) {
@@ -644,11 +686,7 @@ inline std::string to_string(const expr_node_t* expr)
         case TERM_NULL:
             return "NULL";
         case TERM_DATE: {
-            char date_buf[32];
-            time_t time = expr->val_i;
-            auto tm = std::localtime(&time);
-            std::strftime(date_buf, 32, DATE_FORMAT, tm);
-            return std::string(date_buf);
+            return "'" + std::string(expr->val_s) + "'";
         }
         case TERM_LITERAL_LIST: {
             std::string str = "(";
@@ -768,6 +806,9 @@ inline std::string to_poland(const expr_node_t* expr)
             break;
         case TERM_NULL:
             break;
+        case TERM_DATE:
+            os << expr->val_s << " ";
+            break;
         case TERM_COLUMN_REF:
             if (expr->column_ref->table) {
                 os << 2 << " "
@@ -832,6 +873,9 @@ inline expr_node_t* from_poland(std::istream& is)
             is >> expr->val_b;
             break;
         case TERM_NULL:
+            break;
+        case TERM_DATE:
+            expr->val_s = load_string(is);
             break;
         case TERM_COLUMN_REF:
             is >> tmp;

@@ -67,8 +67,10 @@ public:
     static TableHeader* AddCol(const TableHeader* current, const field_item_t* field);
     static TableHeader* DeleteCol(const TableHeader* current, const char* field_name);
     IndexManager* GetIndexManager(int col);
+    RecordManager* GetRecordManager();
     int GetColumnID(const char* col);
     void Insert(const linked_list_t* columns, const linked_list_t* values);
+    void Insert(const std::vector<expr_node_t*>& values);
     void Update(const char* column, expr_node_t* where, const expr_node_t* value);
     void Delete(expr_node_t* where);
     void Cache(std::set<int>& rids);
