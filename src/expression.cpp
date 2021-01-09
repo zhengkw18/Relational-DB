@@ -10,3 +10,7 @@ std::unordered_map<
     >
     current_rids;
 std::string current_table;
+std::unordered_map<
+    select_single_info_t*,
+    linked_list_t*>
+    in_where_cache;

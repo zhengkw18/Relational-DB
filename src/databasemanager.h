@@ -54,6 +54,7 @@ public:
     void AlterTable_DropIndex(const char* table_name, const char* index_name);
     bool select_from_one_table(const char* table_name, expr_node_t* where, std::set<int>& rids);
     bool select_from_one_table(const char* table_name, std::vector<expr_node_t*> and_exprs, std::set<int>& rids);
+    linked_list_t* select_in_where(const char* table_name, expr_node_t* where, expr_node_t* expr);
     TableManager* get_table_manager(const char* table_name);
 
     static DatabaseManager* get_instance()

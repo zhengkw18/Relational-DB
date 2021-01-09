@@ -13,7 +13,6 @@ inline void free_linked_list(linked_list_t* linked_list, DataDeleter data_delete
         free(tmp);
     }
 }
-
 inline void free_exprnode(expr_node_t* expr)
 {
     if (expr == nullptr)
@@ -29,9 +28,13 @@ inline void free_exprnode(expr_node_t* expr)
             free(expr->column_ref);
             break;
         case TERM_LITERAL_LIST:
-            free_linked_list<expr_node_t>(
-                expr->literal_list,
-                free_exprnode);
+            free_linked_list<expr_node_t>(expr->literal_list, free_exprnode);
+            break;
+        case TERM_IN_WHERE:
+            free_exprnode(expr->in_where->where);
+            free_exprnode(expr->in_where->expr);
+            free(expr->in_where->table);
+            free(expr->in_where);
             break;
         default:
             break;

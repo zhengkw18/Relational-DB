@@ -127,6 +127,7 @@ struct Expression {
         float val_f;
         bool val_b;
         linked_list_t* literal_list;
+        select_single_info_t* in_where;
     };
 
     term_type_t type;

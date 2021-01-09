@@ -47,6 +47,7 @@ typedef enum {
     OPERATOR_GT,
     OPERATOR_LT,
     OPERATOR_IN,
+    OPERATOR_IN_WHERE,
     OPERATOR_LIKE,
     /* unary */
     OPERATOR_NEGATE = OPERATOR_UNARY,
@@ -70,6 +71,7 @@ typedef enum {
     TERM_FLOAT,
     TERM_BOOL,
     TERM_LITERAL_LIST,
+    TERM_IN_WHERE,
     TERM_NULL
 } term_type_t;
 
@@ -109,6 +111,7 @@ typedef struct expr_node_t {
         struct column_ref_t* column_ref;
         struct expr_node_t* left;
         struct linked_list_t* literal_list;
+        struct select_single_info_t* in_where;
     };
     struct expr_node_t* right;
     operator_type_t op;
@@ -140,6 +143,12 @@ typedef struct select_info_t {
     linked_list_t *tables, *exprs;
     expr_node_t* where;
 } select_info_t;
+
+typedef struct select_single_info_t {
+    char* table;
+    expr_node_t* expr;
+    expr_node_t* where;
+} select_single_info_t;
 
 #ifdef __cplusplus
 };

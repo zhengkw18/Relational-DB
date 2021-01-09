@@ -30,6 +30,7 @@ void yyerror(const char *s);
 	struct delete_info_t      *delete_info;
 	struct select_info_t      *select_info;
 	struct expr_node_t        *expr;
+	struct select_single_info_t *select_single_info;
 }
 
 %token TRUE FALSE NULL_TOKEN MIN MAX SUM AVG COUNT
@@ -68,6 +69,7 @@ void yyerror(const char *s);
 %type <expr> aggregate_expr aggregate_term select_expr default_expr
 %type <val_i> logical_op compare_op aggregate_op
 %type <list> select_expr_list select_expr_list_s table_refs
+%type <select_single_info>  select_single_stmt
 
 %start sql_stmts
 
@@ -160,6 +162,14 @@ select_stmt         : SELECT select_expr_list_s FROM table_refs where_clause {
 						$$->tables = $4;
 						$$->exprs  = $2;
 						$$->where  = $5;
+					}
+					;
+
+select_single_stmt  : SELECT expr FROM name where_clause {
+					 	$$ = (select_single_info_t*)malloc(sizeof(select_single_info_t));
+						$$->table = $4;
+						$$->expr  = $2;
+						$$->where = $5;
 					}
 					;
 
@@ -371,6 +381,14 @@ cond_term  : expr compare_op expr {
 				$$->left  = $1;
 				$$->right = $4;
 				$$->op    = OPERATOR_IN;
+		   }
+		   | expr IN '(' select_single_stmt ')' {
+		   		$$ = (expr_node_t*)calloc(1, sizeof(expr_node_t));
+				$$->left     		 = $1;
+				$$->right 			 = (expr_node_t*)calloc(1, sizeof(expr_node_t));
+				$$->right->in_where  = $4;
+				$$->right->term_type = TERM_IN_WHERE;
+				$$->op    			 = OPERATOR_IN_WHERE;
 		   }
 		   | expr IS NULL_TOKEN {
 		   		$$ = (expr_node_t*)calloc(1, sizeof(expr_node_t));

@@ -3,6 +3,7 @@
 #include "../parser/defs.h"
 #include "../parser/free.h"
 #include "comparator.h"
+#include "databasemanager.h"
 #include "tuple.h"
 #include "utils.h"
 #include <iomanip>
@@ -18,6 +19,10 @@ extern std::unordered_map<
     int // rid
     >
     current_rids;
+extern std::unordered_map<
+    select_single_info_t*,
+    linked_list_t*>
+    in_where_cache;
 extern std::string current_table;
 extern std::vector<linked_list_t*> copy_values;
 namespace expression {
@@ -164,6 +169,14 @@ inline void clear_cache(bool delete_string)
     cache.clear();
 }
 
+inline void clear_in_where_cache()
+{
+    for (auto it = in_where_cache.begin(); it != in_where_cache.end(); ++it) {
+        free_linked_list<expr_node_t>(it->second, free_exprnode);
+    }
+    in_where_cache.clear();
+}
+
 inline void set_current_table(const std::string table)
 {
     current_table = table;
@@ -256,6 +269,9 @@ inline Expression eval_terminal(const expr_node_t* expr)
         break;
     case TERM_LITERAL_LIST:
         ret.literal_list = expr->literal_list;
+        break;
+    case TERM_IN_WHERE:
+        ret.in_where = expr->in_where;
         break;
     default:
         assert(0);
@@ -621,6 +637,30 @@ inline Expression eval(const expr_node_t* expr)
     }
     if (expr->op == OPERATOR_IN) {
         bool ret = eval_in_expression(left, right.literal_list);
+        Expression expr;
+        expr.type = TERM_BOOL;
+        expr.val_b = ret;
+        return expr;
+    } else if (expr->op == OPERATOR_IN_WHERE) {
+        linked_list_t* vals;
+        if (in_where_cache.count(right.in_where) > 0) {
+            vals = in_where_cache[right.in_where];
+        } else {
+            vals = DatabaseManager::get_instance()->select_in_where(right.in_where->table, right.in_where->where, right.in_where->expr);
+            in_where_cache.insert(std::make_pair(right.in_where, vals));
+            // for (linked_list_t* l_ptr = vals; l_ptr; l_ptr = l_ptr->next) {
+            //     expr_node_t* val = (expr_node_t*)l_ptr->data;
+            //     assert(val->op == OPERATOR_NONE);
+            //     switch (val->term_type) {
+            //     case TERM_INT:
+            //         printf("%d\n", val->val_i);
+            //         break;
+            //     default:
+            //         assert(false);
+            //     }
+            // }
+        }
+        bool ret = eval_in_expression(left, vals);
         Expression expr;
         expr.type = TERM_BOOL;
         expr.val_b = ret;
@@ -1033,6 +1073,37 @@ inline Expression expr_to_Expr(const expr_node_t* expr)
             ret.val_s = expr->val_s;
         }
         break;
+    case TERM_NULL:
+        break;
+    default:
+        assert(0);
+        break;
+    }
+
+    return ret;
+}
+inline expr_node_t* Expr_to_expr(const Expression expr)
+{
+    expr_node_t* ret = (expr_node_t*)calloc(1, sizeof(expr_node_t));
+    ret->term_type = expr.type;
+    switch (expr.type) {
+    case TERM_INT:
+        ret->val_i = expr.val_i;
+        break;
+    case TERM_FLOAT:
+        ret->val_f = expr.val_f;
+        break;
+    case TERM_STRING:
+        ret->val_s = strdup(expr.val_s);
+        break;
+    case TERM_DATE: {
+        char date_buf[32];
+        time_t time = expr.val_i;
+        auto tm = std::localtime(&time);
+        std::strftime(date_buf, 32, DATE_FORMAT, tm);
+        ret->val_s = strdup(date_buf);
+        break;
+    }
     case TERM_NULL:
         break;
     default:

@@ -379,12 +379,14 @@ void DatabaseManager::Select(const select_info_t* select_info)
                     if (col_ref->table != nullptr && strcmp(col_ref->table, tables[0].c_str()) != 0) {
                         fprintf(stderr, "[Error] Table not found.\n");
                         expression::clear_cache(true);
+                        expression::clear_in_where_cache();
                         return;
                     }
                     int id = current_tables[table_ids[0]]->GetColumnID(col_ref->column);
                     if (id == -1) {
                         fprintf(stderr, "[Error] Column not found.\n");
                         expression::clear_cache(true);
+                        expression::clear_in_where_cache();
                         return;
                     }
                 }
@@ -403,6 +405,7 @@ void DatabaseManager::Select(const select_info_t* select_info)
             if (exprs.size() > 1) {
                 fprintf(stderr, "[Error] More than one aggregation is not supported.\n");
                 expression::clear_cache(true);
+                expression::clear_in_where_cache();
                 return;
             }
             expr_node_t* expr = exprs[0];
@@ -413,12 +416,14 @@ void DatabaseManager::Select(const select_info_t* select_info)
                 if (col_ref == nullptr) {
                     fprintf(stderr, "[Error] Must specify column.\n");
                     expression::clear_cache(true);
+                    expression::clear_in_where_cache();
                     return;
                 }
                 col_type = current_tables[table_ids[0]]->GetColumnType(current_tables[table_ids[0]]->GetColumnID(col_ref->column));
                 if (col_type != TYPE_INT && col_type != TYPE_FLOAT) {
                     fprintf(stderr, "[Error] Type not supported.\n");
                     expression::clear_cache(true);
+                    expression::clear_in_where_cache();
                     return;
                 }
             }
@@ -595,6 +600,7 @@ void DatabaseManager::Select(const select_info_t* select_info)
             } else {
                 if (!select_from_one_table(tables[i].c_str(), one_table_expr[i], one_table_rids[i])) {
                     expression::clear_cache(true);
+                    expression::clear_in_where_cache();
                     return;
                 }
             }
@@ -867,12 +873,14 @@ void DatabaseManager::Select(const select_info_t* select_info)
                     if (id == -1) {
                         fprintf(stderr, "[Error] Table not found.\n");
                         expression::clear_cache(true);
+                        expression::clear_in_where_cache();
                         return;
                     }
                     int col_id = current_tables[table_ids[id]]->GetColumnID(col_ref->column);
                     if (col_id == -1) {
                         fprintf(stderr, "[Error] Column not found.\n");
                         expression::clear_cache(true);
+                        expression::clear_in_where_cache();
                         return;
                     }
                 }
@@ -891,6 +899,7 @@ void DatabaseManager::Select(const select_info_t* select_info)
             if (exprs.size() > 1) {
                 fprintf(stderr, "[Error] More than one aggregation is not supported.\n");
                 expression::clear_cache(true);
+                expression::clear_in_where_cache();
                 return;
             }
             expr_node_t* expr = exprs[0];
@@ -901,6 +910,7 @@ void DatabaseManager::Select(const select_info_t* select_info)
                 if (col_ref == nullptr) {
                     fprintf(stderr, "[Error] Must specify column.\n");
                     expression::clear_cache(true);
+                    expression::clear_in_where_cache();
                     return;
                 }
                 int id = -1;
@@ -914,6 +924,7 @@ void DatabaseManager::Select(const select_info_t* select_info)
                 if (col_type != TYPE_INT && col_type != TYPE_FLOAT) {
                     fprintf(stderr, "[Error] Type not supported.\n");
                     expression::clear_cache(true);
+                    expression::clear_in_where_cache();
                     return;
                 }
             }
@@ -1050,6 +1061,7 @@ void DatabaseManager::Select(const select_info_t* select_info)
         }
     }
     expression::clear_cache(true);
+    expression::clear_in_where_cache();
 }
 void DatabaseManager::Delete(const delete_info_t* delete_info)
 {
@@ -1324,7 +1336,7 @@ bool DatabaseManager::select_from_one_table(const char* table_name, expr_node_t*
         std::vector<column_ref_t*> and_col_refs;
         expression::extract_col_refs(expr, and_col_refs);
         IndexManager* indexmanager;
-        if (and_col_refs.size() != 1) {
+        if (and_col_refs.size() != 1 || expr->op == OPERATOR_IN || expr->op == OPERATOR_IN_WHERE) {
             and_exprs_remain.push_back(expr);
             continue;
         }
@@ -1441,6 +1453,185 @@ bool DatabaseManager::select_from_one_table(const char* table_name, expr_node_t*
     rids = valid_rids;
     return true;
 }
+linked_list_t* DatabaseManager::select_in_where(const char* table_name, expr_node_t* where, expr_node_t* expr)
+{
+    std::string current_table_backup = current_table;
+    expression::set_current_table(table_name);
+    std::set<int> rids;
+    int table_id;
+    if (!GetTableId(table_name, table_id)) {
+        expression::set_current_table(current_table_backup);
+        return nullptr;
+    }
+    TableManager* tablemanager = current_tables[table_id];
+    std::vector<column_ref_t*> col_refs;
+    expression::extract_col_refs(where, col_refs);
+    std::map<std::string, int> col_name_to_id;
+    for (column_ref_t* col_ref : col_refs) {
+        if (col_ref->table != nullptr && strcmp(col_ref->table, table_name) != 0) {
+            expression::set_current_table(current_table_backup);
+            return nullptr;
+        }
+        int id = tablemanager->GetColumnID(col_ref->column);
+        if (id == -1) {
+            expression::set_current_table(current_table_backup);
+            return nullptr;
+        }
+        col_name_to_id[std::string(col_ref->column)] = id;
+    }
+    std::vector<expr_node_t*> and_exprs;
+    expression::extract_and_cond(where, and_exprs);
+    std::vector<expr_node_t*> and_exprs_remain;
+    bool flag = true;
+    for (expr_node_t* expr : and_exprs) {
+        std::vector<column_ref_t*> and_col_refs;
+        expression::extract_col_refs(expr, and_col_refs);
+        IndexManager* indexmanager;
+        if (and_col_refs.size() != 1 || expr->op == OPERATOR_IN || expr->op == OPERATOR_IN_WHERE) {
+            and_exprs_remain.push_back(expr);
+            continue;
+        }
+
+        if (expr->left->term_type == TERM_COLUMN_REF) {
+            if ((indexmanager = tablemanager->GetIndexManager(col_name_to_id[std::string(expr->left->column_ref->column)])) == nullptr) {
+                and_exprs_remain.push_back(expr);
+                continue;
+            }
+            Expression expression = expression::eval(expr->right);
+            int col_type = tablemanager->GetColumnType(col_name_to_id[std::string(expr->left->column_ref->column)]);
+            if (!expression::type_compatible(col_type, expression)) {
+                expression::set_current_table(current_table_backup);
+                return nullptr;
+            }
+            BufType data = expression::expr_to_buftype(expression);
+            std::set<int> index_rids;
+            switch (expr->op) {
+            case OPERATOR_EQ:
+                indexmanager->get_rid_eq(data, index_rids);
+                break;
+            case OPERATOR_NEQ:
+                indexmanager->get_rid_neq(data, index_rids);
+                break;
+            case OPERATOR_GT:
+                indexmanager->get_rid_gt(data, index_rids);
+                break;
+            case OPERATOR_GEQ:
+                indexmanager->get_rid_gte(data, index_rids);
+                break;
+            case OPERATOR_LT:
+                indexmanager->get_rid_lt(data, index_rids);
+                break;
+            case OPERATOR_LEQ:
+                indexmanager->get_rid_lte(data, index_rids);
+                break;
+            default:
+                and_exprs_remain.push_back(expr);
+                continue;
+            }
+            if (rids.empty()) {
+                rids.insert(index_rids.begin(), index_rids.end());
+            } else {
+                std::set<int> result;
+                std::set_intersection(rids.begin(), rids.end(), index_rids.begin(), index_rids.end(), std::inserter(result, result.begin()));
+                rids = result;
+            }
+            flag = false;
+            if (data != nullptr)
+                delete[] data;
+        } else if (expr->right->term_type == TERM_COLUMN_REF) {
+            if ((indexmanager = tablemanager->GetIndexManager(col_name_to_id[std::string(expr->right->column_ref->column)])) == nullptr) {
+                and_exprs_remain.push_back(expr);
+                continue;
+            }
+            Expression expression = expression::eval(expr->left);
+            int col_type = tablemanager->GetColumnType(col_name_to_id[std::string(expr->right->column_ref->column)]);
+            if (!expression::type_compatible(col_type, expression)) {
+                expression::set_current_table(current_table_backup);
+                return nullptr;
+            }
+            BufType data = expression::expr_to_buftype(expression);
+            std::set<int> index_rids;
+            switch (expr->op) {
+            case OPERATOR_EQ:
+                indexmanager->get_rid_eq(data, index_rids);
+                break;
+            case OPERATOR_NEQ:
+                indexmanager->get_rid_neq(data, index_rids);
+                break;
+            case OPERATOR_GT:
+                indexmanager->get_rid_lt(data, index_rids);
+                break;
+            case OPERATOR_GEQ:
+                indexmanager->get_rid_lte(data, index_rids);
+                break;
+            case OPERATOR_LT:
+                indexmanager->get_rid_gt(data, index_rids);
+                break;
+            case OPERATOR_LEQ:
+                indexmanager->get_rid_gte(data, index_rids);
+                break;
+            default:
+                and_exprs_remain.push_back(expr);
+                continue;
+            }
+            if (rids.empty()) {
+                rids.insert(index_rids.begin(), index_rids.end());
+            } else {
+                std::set<int> result;
+                std::set_intersection(rids.begin(), rids.end(), index_rids.begin(), index_rids.end(), std::inserter(result, result.begin()));
+                rids = result;
+            }
+            flag = false;
+            if (data != nullptr)
+                delete[] data;
+        }
+    }
+    if (flag || !rids.empty())
+        tablemanager->Cache(rids);
+    std::set<int> valid_rids;
+    for (int rid : rids) {
+        bool valid = true;
+        for (expr_node_t* expr : and_exprs_remain) {
+            expression::set_current_rid(std::string(table_name), rid);
+            if (!expression::expr_to_bool(expression::eval(expr))) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid)
+            valid_rids.insert(rid);
+    }
+    rids = valid_rids;
+    std::vector<column_ref_t*> expr_col_refs;
+    expression::extract_col_refs(expr, expr_col_refs);
+    for (column_ref_t* col_ref : expr_col_refs) {
+        if (col_ref->table != nullptr && strcmp(col_ref->table, table_name) != 0) {
+            expression::set_current_table(current_table_backup);
+            return nullptr;
+        }
+        int id = current_tables[table_id]->GetColumnID(col_ref->column);
+        if (id == -1) {
+            expression::set_current_table(current_table_backup);
+            return nullptr;
+        }
+    }
+    linked_list_t* val_list = nullptr;
+    for (int rid : rids) {
+        expression::set_current_rid(table_name, rid);
+        if (val_list == nullptr) {
+            val_list = (linked_list_t*)malloc(sizeof(linked_list_t));
+            val_list->next = NULL;
+            val_list->data = expression::Expr_to_expr(expression::eval(expr));
+        } else {
+            linked_list_t* val_list_new = (linked_list_t*)malloc(sizeof(linked_list_t));
+            val_list_new->next = val_list;
+            val_list_new->data = expression::Expr_to_expr(expression::eval(expr));
+            val_list = val_list_new;
+        }
+    }
+    expression::set_current_table(current_table_backup);
+    return val_list;
+}
 bool DatabaseManager::select_from_one_table(const char* table_name, std::vector<expr_node_t*> and_exprs, std::set<int>& rids)
 {
     int table_id;
@@ -1461,7 +1652,7 @@ bool DatabaseManager::select_from_one_table(const char* table_name, std::vector<
         std::vector<column_ref_t*> and_col_refs;
         expression::extract_col_refs(expr, and_col_refs);
         IndexManager* indexmanager;
-        if (and_col_refs.size() != 1) {
+        if (and_col_refs.size() != 1 || expr->op == OPERATOR_IN || expr->op == OPERATOR_IN_WHERE) {
             and_exprs_remain.push_back(expr);
             continue;
         }
