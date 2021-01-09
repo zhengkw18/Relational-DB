@@ -1,0 +1,32 @@
+create table test (i int, v varchar(10));
+
+alter table test add b int;
+
+insert into test values (1, 'hello', 1);
+alter table test add f int not null; -- error
+alter table test add f float default 233.0;
+insert into test values (0, 'world', 0);
+select * from test;
+
+alter table test drop b; alter table test drop v; alter table test drop f;
+alter table test drop i; -- error
+
+drop table test;
+
+create table test1 (a int, b int, primary key(a));
+create table test2 (v1 varchar(10), v2 varchar(10), f_a int, f_b int,constraint ff foreign key(f_a) references test1(a));
+alter table test1 add primary key (a); -- error
+alter table test1 drop a; -- error, there is foreign link to a
+drop table test2;
+drop table test1;
+
+create table test (a int, b int);
+insert into test values (1, 1);
+insert into test values (1, 2);
+alter table test add primary key(a, b);
+alter table test drop primary key;
+alter table test add primary key (a); -- error, a is duplicate
+alter table test rename to test1;
+show database test;
+alter table test1 add unique (a);
+drop table test1;

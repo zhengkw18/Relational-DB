@@ -1,0 +1,42 @@
+create table mmm(a int,b date default '2020-12-31',c char(20),d float, e varchar(1000),primary key(a),index cc(d,c),check(b<'2021-01-01')) ;
+insert into mmm values (1,'2020-10-10','33.11',1.0,'China');
+insert into mmm values (2,'2020-10-20','ewg-aaw-1',1.0,'China');
+insert into mmm values (3,'2020-10-30','America',192.35,null);
+CREATE TABLE test(a INT NOT NULL, b CHAR(200) NOT NULL default 'China', c INT, d VARCHAR(152),primary key(a,b),check(a<10),check(b in ('China','America')));
+INSERT INTO test(a,d) VALUES (1, 'nothing left');
+INSERT INTO test(a,c,d) VALUES (2,0, 'nothing left');
+INSERT INTO test(a,c,d) VALUES (3,1, 'nothing left');
+INSERT INTO test(a,c,d) VALUES (4,2, 'nothing left');
+INSERT INTO test(a,c,d) VALUES (5,3, 'nothing left');
+INSERT INTO test(a,c,d) VALUES (6,4, 'nothing left');
+update test set c=10 where (c is null) or (c>3);
+select avg(a) from test;
+select * from test,mmm where test.a=mmm.a;
+select * from mmm where a<2;
+select * from mmm where 1<0;
+select * from mmm where a>a-1;
+update mmm set d=d*d+1.0;
+select * from test where d like 'n% left';
+drop table mmm;
+drop table test;
+
+create table mmm(a char(20),primary key(a));
+insert into mmm values('abcde');
+insert into mmm values('abcde');
+insert into mmm values('abcd');
+select * from mmm where a > 'abcda';
+insert into mmm values(null);
+drop table mmm;
+
+create table test(a date default '2020-12-29',primary key(a) ,check (a<'2020-12-30'));
+INSERT INTO test(a) VALUES ('2020-01-01');
+INSERT INTO test(a) VALUES ('2021-01-01');
+drop table test;
+
+select count(*) from LINEITEM;
+delete from LINEITEM where L_ORDERKEY > 15000;
+select count(*) from LINEITEM;
+delete from CUSTOMER;
+
+select p_partkey from part where p_partkey in (select p_partkey from part where p_partkey in (1,3,5,7,9));
+select p_partkey from part where p_partkey in (select p_partkey from part where p_partkey in (select p_partkey from part where p_partkey in (select p_partkey from part where p_partkey in (1,3,5,7,9))));
