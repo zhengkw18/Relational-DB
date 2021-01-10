@@ -42,6 +42,7 @@ public:
     void Select(const select_info_t* select_info);
     void Delete(const delete_info_t* delete_info);
     void AlterTable_Rename(const char* table_name, const char* new_name);
+    void Rename(const char* table_name, const char* new_name);
     void AlterTable_AddPrimary(const char* table_name, const linked_list_t* column_list);
     void AlterTable_DropPrimary(const char* table_name);
     void AlterTable_AddUnique(const char* table_name, const char* field_name);

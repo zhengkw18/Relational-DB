@@ -1,5 +1,5 @@
-CREATE DATABASE test;
-USE test;
+CREATE DATABASE orderDB2;
+USE orderDB2;
 
 CREATE TABLE PART (
 	P_PARTKEY INT,
@@ -115,8 +115,49 @@ ALTER TABLE PARTSUPP ADD CONSTRAINT PS_PARTKEY FOREIGN KEY (PS_PARTKEY) REFERENC
 ALTER TABLE PARTSUPP ADD CONSTRAINT PS_SUPPKEY FOREIGN KEY (PS_SUPPKEY) REFERENCES SUPPLIER(S_SUPPKEY);
 ALTER TABLE CUSTOMER ADD CONSTRAINT C_NATIONKEY FOREIGN KEY (C_NATIONKEY) REFERENCES NATION(N_NATIONKEY);
 ALTER TABLE ORDERS ADD CONSTRAINT O_CUSTKEY FOREIGN KEY (O_CUSTKEY) REFERENCES CUSTOMER(C_CUSTKEY);
-ALTER TABLE LINEITEM ADD CONSTRAINT L_ORDERKEY FOREIGN KEY (L_ORDERKEY) REFERENCES ORDERS(O_ORDERKEY);
-ALTER TABLE LINEITEM ADD CONSTRAINT L_PARTKEY_SUPPKEY FOREIGN KEY (L_PARTKEY,L_SUPPKEY) REFERENCES PARTSUPP(PS_PARTKEY,PS_SUPPKEY);
 ALTER TABLE NATION ADD CONSTRAINT N_REGIONKEY FOREIGN KEY (N_REGIONKEY) REFERENCES REGION(R_REGIONKEY);
 
-SHOW DATABASE test;
+ALTER TABLE LINEITEM ADD CONSTRAINT L_ORDERKEY FOREIGN KEY (L_ORDERKEY) REFERENCES ORDERS(O_ORDERKEY);
+ALTER TABLE LINEITEM ADD CONSTRAINT L_PARTKEY_SUPPKEY FOREIGN KEY (L_PARTKEY,L_SUPPKEY) REFERENCES PARTSUPP(PS_PARTKEY,PS_SUPPKEY);
+SHOW DATABASE orderdb2;
+
+CREATE TABLE nationBack(
+n_nationkey INT NOT NULL,
+n_name CHAR(25) NOT NULL,
+n_regionkey INT NOT NULL,
+n_comment VARCHAR(152)
+);
+
+
+INSERT INTO nation VALUES (0,'America',0, 'nothing left');
+INSERT INTO nation VALUES ('id86','America',0, 'nothing left');
+INSERT INTO orders VALUES (127664,315000,'F',6.5,'2018-02-29',0,'Clerk101',1,'nice service');
+DELETE FROM customer WHERE c_custkey=5;
+UPDATE partsupp SET ps_availqty=8774 WHERE ps_partkey=12;
+select count(*) from partsupp where ps_partkey=12;
+select count(*) from partsupp where ps_partkey!=12 and ps_availqty=8774;
+select count(*) from partsupp where ps_availqty=8774;
+SELECT count(*) FROM customer WHERE c_nationkey<10;
+SELECT o_orderdate,o_totalprice FROM orders WHERE o_orderdate='1996-01-02';
+SELECT customer.c_phone,orders.o_orderstatus FROM customer,orders where customer.c_custkey=orders.o_custkey AND customer.c_name='Customer#000000001';
+UPDATE nation SET n_regionkey = 316001 WHERE n_nationkey= 15;
+ALTER TABLE nation ADD n_comment_2 varchar(32);
+ALTER TABLE nation drop n_comment_2;
+ALTER TABLE nation RENAME TO province;
+alter table nation drop primary key;
+alter table province drop primary key;
+ALTER TABLE province RENAME TO nation;
+ALTER TABLE nation ADD PRIMARY KEY (n_nationkey);
+ALTER TABLE NATION ADD constraint NATION_FK1 FOREIGN KEY (N_REGIONKEY) references REGION(R_REGIONKEY);
+ALTER TABLE nation DROP FOREIGN KEY NATION_FK1;
+ALTER TABLE customer ADD INDEX Idx_residual(c_acctbal);
+ALTER TABLE customer DROP INDEX Idx_residual;
+select o_totalprice from orders where o_clerk like 'Clerk#00000092%';
+select count(*) from customer,orders,nation where customer.c_custkey=orders.o_custkey and customer.c_nationkey=nation.n_nationkey and nation.n_name='CHINA                    ';
+SELECT count(*) FROM customer,orders,nation,region WHERE customer.c_custkey=orders.o_custkey AND customer.c_nationkey=nation.n_nationkey AND nation.n_regionkey=region.r_regionkey AND nation.n_name='CHINA                    ';
+SELECT count(*) FROM lineitem,customer,orders,nation,region WHERE customer.c_custkey=orders.o_custkey AND customer.c_nationkey=nation.n_nationkey AND nation.n_regionkey=region.r_regionkey AND orders.o_orderkey=lineitem.l_orderkey AND nation.n_name='CHINA                    ';
+SELECT count(*) FROM customer WHERE c_custkey IN (SELECT o_custkey FROM orders WHERE o_totalprice < 10000.0);
+ALTER TABLE customer ADD UNIQUE (c_nationkey);
+select SUM(p_size) from part;
+
+ALTER TABLE nation ADD CONSTRAINT fk_nation_region FOREIGN KEY(n_regionkey) REFERENCES region(r_regionkey) ON UPDATE CASCADE;

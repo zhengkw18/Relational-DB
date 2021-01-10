@@ -835,10 +835,6 @@ TableHeader* TableManager::DeleteCol(const TableHeader* current, const char* fie
 {
     TableHeader newheader;
     memset(&newheader, 0, sizeof(TableHeader));
-    if (current->referred_num > 0) {
-        fprintf(stderr, "[Error] The table is referred.\n");
-        return nullptr;
-    }
     int id = -1;
     for (int i = 0; i < current->col_num; i++) {
         if (strcmp(current->col_name[i], field_name) == 0) {
@@ -895,6 +891,10 @@ TableHeader* TableManager::DeleteCol(const TableHeader* current, const char* fie
         }
     }
     if (flag) {
+        if (current->referred_num > 0) {
+            fprintf(stderr, "[Error] The table is referred.\n");
+            return nullptr;
+        }
         newheader.primary_num = 0;
     } else {
         newheader.primary_num = current->primary_num;

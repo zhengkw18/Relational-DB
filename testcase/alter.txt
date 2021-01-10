@@ -30,3 +30,18 @@ alter table test rename to test1;
 show database test;
 alter table test1 add unique (a);
 drop table test1;
+
+create table REGION_2 ( R_REGIONKEY INT NOT NULL, 
+                        R_NAME CHAR(25) NOT NULL, 
+                        R_COMMENT VARCHAR(152), 
+                        PRIMARY KEY(R_REGIONKEY));
+
+copy region_2 from '../../dataset/region.tbl';
+
+ALTER TABLE region_2 ADD R_DATE DATE DEFAULT '2021-01-09';
+desc region_2;
+
+ALTER TABLE region_2 DROP R_DATE;
+desc region_2;
+
+drop table region_2;

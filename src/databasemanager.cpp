@@ -1102,6 +1102,16 @@ void DatabaseManager::AlterTable_Rename(const char* table_name, const char* new_
     system(("ls " + table_name_str + "* | sed 's/^" + table_name_str + "//' | xargs -i mv " + table_name_str + "{} " + std::string(new_name) + "{}").c_str());
     current_tables[table_id] = new TableManager(new_name);
 }
+void DatabaseManager::Rename(const char* table_name, const char* new_name)
+{
+    int table_id;
+    GetTableId(table_name, table_id);
+    delete current_tables[table_id];
+    strcpy(current_databaseheader.tables[table_id], new_name);
+    std::string table_name_str = table_name;
+    system(("ls " + table_name_str + "* | sed 's/^" + table_name_str + "//' | xargs -i mv " + table_name_str + "{} " + std::string(new_name) + "{}").c_str());
+    current_tables[table_id] = new TableManager(new_name);
+}
 void DatabaseManager::AlterTable_AddPrimary(const char* table_name, const linked_list_t* column_list)
 {
     if (!AssertUsing())
@@ -1160,7 +1170,7 @@ void DatabaseManager::AlterTable_AddCol(const char* table_name, const field_item
         return;
     std::string name_temp = table_name;
     name_temp = "_" + name_temp;
-    AlterTable_Rename(table_name, name_temp.c_str());
+    Rename(table_name, name_temp.c_str());
     TableManager* old_tm = current_tables[table_id];
     strcpy(current_databaseheader.tables[table_id], table_name);
     TableManager::CreateTable(newheader);
@@ -1202,7 +1212,7 @@ void DatabaseManager::AlterTable_DropCol(const char* table_name, const char* fie
     int col_id = current_table->GetColumnID(field_name);
     std::string name_temp = table_name;
     name_temp = "_" + name_temp;
-    AlterTable_Rename(table_name, name_temp.c_str());
+    Rename(table_name, name_temp.c_str());
     TableManager* old_tm = current_tables[table_id];
     strcpy(current_databaseheader.tables[table_id], table_name);
     TableManager::CreateTable(newheader);
